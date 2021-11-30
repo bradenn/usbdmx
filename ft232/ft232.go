@@ -2,9 +2,9 @@ package ft232
 
 import (
 	"fmt"
+	"usbdmx"
 
 	"github.com/google/gousb"
-	"github.com/oliread/usbdmx"
 )
 
 const (
@@ -30,7 +30,7 @@ func NewDMXController(conf usbdmx.ControllerConfig) DMXController {
 	d.channels = make([]byte, 512)
 	d.packet = make([]byte, 513)
 
-	d.outputInterfaceID = conf.OutputInterfaceID
+	d.outputInterfaceID = conf.OutputId
 	d.ctx = conf.Context
 
 	return d
