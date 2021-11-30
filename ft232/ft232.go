@@ -7,10 +7,13 @@ import (
 	"github.com/oliread/usbdmx"
 )
 
+const (
+	VID = uint16(0x0403)
+	PID = uint16(0x6001)
+)
+
 // DMXController a real world FT232 DMX Controller to handle comms
 type DMXController struct {
-	vid      uint16
-	pid      uint16
 	channels []byte
 	packet   []byte
 
@@ -27,25 +30,36 @@ func NewDMXController(conf usbdmx.ControllerConfig) DMXController {
 	d.channels = make([]byte, 512)
 	d.packet = make([]byte, 513)
 
-	d.vid = conf.VID
-	d.pid = conf.PID
 	d.outputInterfaceID = conf.OutputInterfaceID
 	d.ctx = conf.Context
 
 	return d
 }
 
+type controlHeader struct {
+	request uint8
+	val     uint16
+}
+
+func (c controlHeader) send(d *gousb.Device) error {
+	_, err := d.Control(0x40, c.request, c.val, 0x00, nil)
+	if err != nil {
+		return err
+	}
+	return err
+}
+
 // Connect handles connectio to a mock DMX controller
 func (d *DMXController) Connect() error {
 	// try to connect to device
-	device, err := d.ctx.OpenDeviceWithVIDPID(gousb.ID(d.vid), gousb.ID(d.pid))
+	device, err := d.ctx.OpenDeviceWithVIDPID(gousb.ID(VID), gousb.ID(PID))
 	if err != nil {
 		return err
 	}
 	d.device = device
 
 	// make this device ours, even if it is being used elsewhere
-	if err := d.device.SetAutoDetach(true); err != nil {
+	if err = d.device.SetAutoDetach(true); err != nil {
 		return err
 	}
 
@@ -60,20 +74,39 @@ func (d *DMXController) Connect() error {
 		return err
 	}
 
-	// Send our control headers for this device
-	d.device.Control(0x40, 0x00, 0x00, 0x00, nil)
-	d.device.Control(0x40, 0x03, 0x4138, 0x00, nil)
-	d.device.Control(0x40, 0x00, 0x00, 0x00, nil)
-	d.device.Control(0x40, 0x04, 0x1008, 0x00, nil)
-	d.device.Control(0x40, 0x02, 0x00, 0x00, nil)
-	d.device.Control(0x40, 0x03, 0x000c, 0x00, nil)
-	d.device.Control(0x40, 0x00, 0x0001, 0x00, nil)
-	d.device.Control(0x40, 0x00, 0x0002, 0x00, nil)
-	d.device.Control(0x40, 0x01, 0x0200, 0x00, nil)
-	d.device.Control(0x40, 0x04, 0x5008, 0x00, nil)
-	d.device.Control(0x40, 0x00, 0x0002, 0x00, nil)
-	d.device.Control(0x40, 0x04, 0x1008, 0x00, nil)
+	// Format headers
+	headers := []controlHeader{
+		{0x00, 0x00},
+		{0x03, 0x4138},
+		{0x00, 0x00},
+		{0x04, 0x1008},
+		{0x02, 0x00},
+		{0x03, 0x000c},
+		{0x00, 0x0001},
+		{0x00, 0x0002},
+		{0x01, 0x0200},
+		{0x04, 0x5008},
+		{0x00, 0x0002},
+		{0x04, 0x1008},
+	}
 
+	// Send control headers and handle error
+	err = d.sendControl(headers)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (d *DMXController) sendControl(controls []controlHeader) (err error) {
+	// Send our control headers for this device
+	for _, header := range controls {
+		err = header.send(d.device)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -111,8 +144,16 @@ func (d *DMXController) Render() error {
 		d.packet[i+1] = d.channels[i]
 	}
 
-	d.device.Control(0x40, 0x04, 0x5008, 0x00, nil)
-	d.device.Control(0x40, 0x04, 0x1008, 0x00, nil)
+	_, err := d.device.Control(0x40, 0x04, 0x5008, 0x00, nil)
+	if err != nil {
+		return err
+	}
+
+	_, err = d.device.Control(0x40, 0x04, 0x1008, 0x00, nil)
+	if err != nil {
+		return err
+	}
+
 	if _, err := d.output.Write(d.packet); err != nil {
 		return err
 	}
