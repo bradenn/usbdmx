@@ -1,5 +1,8 @@
 # USBDMX
 
+### Fork
+Idk what the last guy was smoking, but there may be diamonds in the rough.
+
 USBDMX, a versatile USB DMX library written in Go for programatic show
 control and special effects.
 
